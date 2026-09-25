@@ -1,4 +1,4 @@
-# 🍔 Biteflow — Full-Stack Swift Project Overview
+# 🍔 Biteflow — Full-Stack Swift Bistro & Food Ordering Platform
 
 ## Architecture
 
@@ -8,26 +8,63 @@ flowchart TB
         A[MenuViewController] --> B[FoodDetailViewController]
         A --> C[CartViewController]
         C --> D[OrderStatusViewController]
-        E[CartManager — Singleton] --> C
+        P[BistroPortalViewController — Manager Tab]
+        E[CartManager — Singleton Observer] --> C
         F[APIService — URLSession async/await] --> A
+        F --> B
         F --> C
         F --> D
+        F --> P
     end
 
     subgraph Backend["Backend (Swift Vapor)"]
         G[CategoryController]
         H[FoodItemController]
         I[OrderController]
+        K[BistroController — Rush Throttle & Z-Report]
         J[(SQLite Database)]
         G --> J
         H --> J
         I --> J
+        K --> J
     end
 
     F <-->|REST JSON / Codable| G
     F <-->|REST JSON / Codable| H
     F <-->|REST JSON / Codable| I
+    F <-->|REST JSON / Codable| K
 ```
+
+## Bistro Manager Features
+
+1. **🍽️ Smart Dine-In Mode with QR Table Ordering & Tab Splitting**
+   - Toggle between **Dine-In**, **Takeout**, and **Delivery**.
+   - Table Number assignment (e.g. Table #4).
+   - Live **Split the Bill** calculator (1 to 8 guests) with real-time per-person price calculation.
+   - Zero delivery fee automatically applied for dine-in & pickup orders.
+
+2. **⚡ Real-Time "86'd" (Item Sold Out) Instant Toggle & Low Stock Badges**
+   - Manager can flick a switch to instantly 86 an item out of stock across all client devices.
+   - Sold out items show an **"86'D · SOLD OUT"** overlay and disabled Add-to-Cart state.
+   - Automatic low stock indicator: **"🔥 Only X left!"** badges when stock is 5 or fewer.
+
+3. **⏱️ Kitchen Rush Hour Throttle & Dynamic Prep Times**
+   - General manager can toggle **Peak Rush Mode** from the Manager Portal.
+   - Customer menu immediately reflects an animated **"🔥 Kitchen Rush Active"** banner.
+   - Prep times dynamically adjust by +15 minutes across all menu cards.
+
+4. **🍷 Smart Upsell & Course Pairing Engine (Boosts AOV)**
+   - Food detail screens feature a **"Chef's Recommended Pairing"** card (e.g., wine pairing, signature sides) with 1-tap addition to the order.
+   - In-cart **"Complete Your Meal"** strip for quick 1-tap additions of desserts (Tiramisu) and beverages (Double Espresso).
+
+5. **📊 Daily "Z-Report" & Shift Operations Dashboard**
+   - Dedicated 4th tab: **Manager Portal**.
+   - 4 Live KPI Cards: Gross Sales ($), Total Orders, Average Ticket Size ($), Active Kitchen Queue.
+   - Live Shift Breakdown: Dine-in vs Takeout vs Delivery counts, Net Sales, Tax Collected.
+   - **Top 5 Best-Selling Dishes** ranking by units sold and revenue generated.
+   - Quick 86'd switcher table to manage menu availability in real-time.
+
+---
 
 ## Project Structure
 
@@ -41,89 +78,69 @@ Biteflow/
 │   │   ├── routes.swift                  # /api/v1 route registration
 │   │   ├── Models/
 │   │   │   ├── Category.swift            # Fluent model
-│   │   │   ├── FoodItem.swift            # Fluent model with dietary tags
-│   │   │   ├── Order.swift               # Fluent model + OrderStatus enum
+│   │   │   ├── FoodItem.swift            # Fluent model (86'd status, stockCount, pairing)
+│   │   │   ├── Order.swift               # Fluent model (diningOption, tableNumber, splitCount)
 │   │   │   └── OrderItem.swift           # Junction model (order ↔ food item)
 │   │   ├── Controllers/
 │   │   │   ├── CategoryController.swift  # GET categories, with-items
-│   │   │   ├── FoodItemController.swift  # GET items, featured, search
-│   │   │   └── OrderController.swift     # POST/GET orders, PATCH status
-│   │   ├── Migrations/                   # Schema + seed data
+│   │   │   ├── FoodItemController.swift  # GET items, search, PATCH toggle-86, stock, upsells
+│   │   │   ├── OrderController.swift     # POST/GET orders, auto-inventory decrement
+│   │   │   └── BistroController.swift    # GET status, POST rush-mode, GET z-report
+│   │   ├── Migrations/                   # Schema + rich seed data
 │   │   └── DTOs/
-│   │       └── OrderDTO.swift            # Request/Response transfer objects
+│   │       ├── OrderDTO.swift            # Request/Response transfer objects
+│   │       └── BistroDTO.swift           # Operational state, Z-Report, top dishes DTOs
 │   └── Tests/AppTests/
 │
 └── iOS/                                  # Native Swift + UIKit iOS App
     └── BiteflowApp/
         ├── App/
         │   ├── AppDelegate.swift         # Global appearance config
-        │   └── SceneDelegate.swift       # Tab bar setup (Menu, Cart, Orders)
-        ├── Models/                       # Codable structs mirroring backend
+        │   └── SceneDelegate.swift       # 4-tab setup (Menu, Cart, Orders, Manager)
         ├── Controllers/
-        │   ├── MenuViewController.swift          # 2-col grid + category pills + search
-        │   ├── FoodDetailViewController.swift    # Hero image + meta cards + add to cart
-        │   ├── CartViewController.swift          # Item list + pricing + checkout
-        │   └── OrderStatusViewController.swift   # Order history + pull-to-refresh
+        │   ├── MenuViewController.swift  # Grid feed, search, category pills, rush banner
+        │   ├── FoodDetailViewController.swift # Hero image, pairing card, 86'd handling
+        │   ├── CartViewController.swift  # Dine-in selector, bill splitter, upsell bar
+        │   ├── OrderStatusViewController.swift # Real-time order tracking
+        │   └── BistroPortalViewController.swift # Live Z-Report, Rush switch, 86 manager
+        ├── Models/
+        │   ├── Category.swift
+        │   ├── FoodItem.swift
+        │   ├── CartItem.swift
+        │   ├── Order.swift
+        │   └── BistroModels.swift
         ├── Views/
-        │   ├── FoodCardCell.swift         # Rich card with image, badges, rating
-        │   ├── CategoryPillCell.swift     # Horizontal filter pills
-        │   └── CartItemCell.swift         # Stepper + delete controls
-        ├── Networking/
-        │   └── APIService.swift           # URLSession client (all endpoints)
+        │   ├── FoodCardCell.swift        # Card cell with 86'd badge & low stock pill
+        │   ├── CartItemCell.swift
+        │   └── CategoryPillCell.swift
         ├── Managers/
-        │   └── CartManager.swift          # Singleton cart state + NotificationCenter
+        │   └── CartManager.swift         # Observer pattern, dining mode, bill splitting
+        ├── Networking/
+        │   └── APIService.swift          # URLSession async/await client with PATCH
         ├── Extensions/
-        │   ├── Theme.swift                # Design system (colors, fonts, shadows)
-        │   └── UIView+Constraints.swift   # AutoLayout helpers
+        │   └── UIView+Layout.swift       # AutoLayout DSL helpers
         └── Resources/
-            └── Info.plist                 # ATS, scene manifest, orientation
+            ├── Theme.swift               # Design system & adaptive color tokens
+            └── Info.plist
 ```
+
+---
 
 ## API Endpoints
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Health check |
-| `GET` | `/api/v1/categories` | All categories |
+|---|---|---|
+| `GET` | `/api/v1/categories` | List all categories |
 | `GET` | `/api/v1/categories/with-items` | Categories with nested food items |
-| `GET` | `/api/v1/categories/:id` | Single category with items |
-| `GET` | `/api/v1/items` | All available food items |
-| `GET` | `/api/v1/items/featured` | Top-rated items (≥ 4.7★) |
-| `GET` | `/api/v1/items/search?q=` | Search by name/description |
-| `GET` | `/api/v1/items/:id` | Single food item detail |
-| `POST` | `/api/v1/orders` | Place a new order |
+| `GET` | `/api/v1/items` | All menu items with 86'd status |
+| `GET` | `/api/v1/items/featured` | Top-rated items (rating ≥ 4.7) |
+| `GET` | `/api/v1/items/search?q={query}` | Search by name or description |
+| `GET` | `/api/v1/items/:id/upsells` | Recommended drinks/dessert pairings |
+| `PATCH` | `/api/v1/items/:id/toggle-86` | Toggle 86'd / sold-out status |
+| `PATCH` | `/api/v1/items/:id/stock` | Update stock count |
+| `POST` | `/api/v1/orders` | Place order (dine-in/takeout/delivery) |
 | `GET` | `/api/v1/orders` | List all orders |
-| `GET` | `/api/v1/orders/:id` | Order detail with items |
-| `PATCH` | `/api/v1/orders/:id/status` | Update order status |
-| `DELETE` | `/api/v1/orders/:id` | Cancel an order |
-
-## Seeded Menu Data
-
-**6 Categories** with **17 Food Items** including:
-- 🍔 Burgers (4 items) — Classic Smash, Truffle Mushroom, Spicy Jalapeño, Beyond Garden
-- 🍕 Pizzas (4 items) — Margherita, Pepperoni, BBQ Chicken, Four Cheese
-- 🥗 Salads (2 items) — Caesar, Mediterranean
-- 🍝 Pasta (2 items) — Carbonara, Arrabbiata
-- 🍰 Desserts (2 items) — Lava Cake, Cheesecake
-- 🥤 Drinks (3 items) — Mango Smoothie, Iced Latte, Lemonade
-
-## Next Steps to Run This Project
-
-> [!IMPORTANT]
-> Since the iOS app requires Xcode (macOS), you need **one** of these to compile and test:
-> 1. **Cloud Mac** (MacInCloud, ~$1/hr) — remote desktop into Xcode
-> 2. **macOS VM** on your Windows PC (VMware/OSX-KVM)
-
-### Running the Vapor Backend (on Windows)
-```bash
-# Install Swift for Windows from https://www.swift.org/install/windows/
-cd Biteflow/backend
-swift run
-# Server starts on http://localhost:8080
-```
-
-### Running the iOS App (on Mac/VM)
-1. Open `iOS/BiteflowApp/` in Xcode
-2. Create a new Xcode project, add all Swift files to the target
-3. Set the `baseURL` in `APIService.swift` to your backend's address
-4. Hit `Cmd + R` → runs on iOS Simulator
+| `GET` | `/api/v1/orders/:id` | Order details with items |
+| `GET` | `/api/v1/bistro/status` | Kitchen rush status & active ticket count |
+| `POST` | `/api/v1/bistro/rush-mode` | Manager peak rush mode toggle |
+| `GET` | `/api/v1/bistro/z-report` | Daily Z-Report, gross sales, & top dishes |

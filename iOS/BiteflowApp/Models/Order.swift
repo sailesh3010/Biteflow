@@ -11,6 +11,10 @@ struct OrderResponse: Codable, Identifiable {
     let deliveryFee: Double
     let total: Double
     let specialInstructions: String
+    let diningOption: String
+    let tableNumber: String?
+    let splitCount: Int
+    let perPersonSplit: Double
     let status: String
     let statusDisplayName: String
     let items: [OrderItemResponse]
@@ -30,6 +34,21 @@ struct OrderResponse: Codable, Identifiable {
     
     var formattedDeliveryFee: String {
         deliveryFee == 0 ? "Free" : String(format: "$%.2f", deliveryFee)
+    }
+    
+    var formattedPerPersonSplit: String {
+        String(format: "$%.2f / person", perPersonSplit)
+    }
+    
+    var diningOptionDisplay: String {
+        switch diningOption {
+        case "dine_in":
+            return "🍽️ Dine-In (\(tableNumber ?? "Table"))"
+        case "pickup":
+            return "🛍️ Takeout / Pickup"
+        default:
+            return "🛵 Delivery"
+        }
     }
 }
 
@@ -51,6 +70,9 @@ struct CreateOrderRequest: Codable {
     let customerPhone: String
     let deliveryAddress: String
     let specialInstructions: String
+    let diningOption: String?
+    let tableNumber: String?
+    let splitCount: Int?
     let items: [CreateOrderItemRequest]
 }
 

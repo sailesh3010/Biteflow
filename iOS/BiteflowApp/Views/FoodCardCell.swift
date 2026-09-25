@@ -5,7 +5,7 @@ protocol FoodCardCellDelegate: AnyObject {
     func foodCardCellDidTapAdd(_ cell: FoodCardCell, item: FoodItemResponse)
 }
 
-/// Rich food item card with image, badges, and add-to-cart button
+/// Rich food item card with image, badges, 86'd status, and add-to-cart button
 final class FoodCardCell: UICollectionViewCell {
     
     static let reuseID = "FoodCardCell"
@@ -32,6 +32,26 @@ final class FoodCardCell: UICollectionViewCell {
         iv.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         iv.backgroundColor = UIColor.systemGray5
         return iv
+    }()
+    
+    // 86'd (Sold Out) overlay badge for Bistro Operations
+    private let eightySixedOverlay: UIView = {
+        let v = UIView()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.backgroundColor = UIColor.systemRed.withAlphaComponent(0.88)
+        v.layer.cornerRadius = 6
+        v.isHidden = true
+        return v
+    }()
+    
+    private let eightySixedLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = UIFont.systemFont(ofSize: 11, weight: .black)
+        label.textColor = .white
+        label.text = "86'D · SOLD OUT"
+        label.textAlignment = .center
+        return label
     }()
     
     private let ratingBadge: UIView = {
@@ -121,6 +141,22 @@ final class FoodCardCell: UICollectionViewCell {
             foodImageView.heightAnchor.constraint(equalTo: cardView.widthAnchor, multiplier: 0.65)
         ])
         
+        // 86'd Overlay
+        foodImageView.addSubview(eightySixedOverlay)
+        eightySixedOverlay.addSubview(eightySixedLabel)
+        NSLayoutConstraint.activate([
+            eightySixedOverlay.centerYAnchor.constraint(equalTo: foodImageView.centerYAnchor),
+            eightySixedOverlay.centerXAnchor.constraint(equalTo: foodImageView.centerXAnchor),
+            eightySixedOverlay.leadingAnchor.constraint(greaterThanOrEqualTo: foodImageView.leadingAnchor, constant: 12),
+            eightySixedOverlay.trailingAnchor.constraint(lessThanOrEqualTo: foodImageView.trailingAnchor, constant: -12),
+            eightySixedOverlay.heightAnchor.constraint(equalToConstant: 26),
+            
+            eightySixedLabel.topAnchor.constraint(equalTo: eightySixedOverlay.topAnchor),
+            eightySixedLabel.bottomAnchor.constraint(equalTo: eightySixedOverlay.bottomAnchor),
+            eightySixedLabel.leadingAnchor.constraint(equalTo: eightySixedOverlay.leadingAnchor, constant: 8),
+            eightySixedLabel.trailingAnchor.constraint(equalTo: eightySixedOverlay.trailingAnchor, constant: -8)
+        ])
+        
         // Rating badge overlay
         foodImageView.addSubview(ratingBadge)
         ratingBadge.addSubview(ratingLabel)
@@ -171,9 +207,29 @@ final class FoodCardCell: UICollectionViewCell {
         metaLabel.text = "\(item.calorieDisplay) · \(item.prepTimeDisplay)"
         ratingLabel.text = "⭐ \(String(format: "%.1f", item.rating))"
         
+        // Handle 86'd status (Sold Out)
+        let is86d = !item.isAvailable
+        eightySixedOverlay.isHidden = !is86d
+        foodImageView.alpha = is86d ? 0.35 : 1.0
+        nameLabel.textColor = is86d ? .secondaryLabel : .label
+        
+        if is86d {
+            addButton.isEnabled = false
+            addButton.setImage(UIImage(systemName: "slash.circle.fill"), for: .normal)
+            addButton.tintColor = .systemGray4
+        } else {
+            addButton.isEnabled = true
+            addButton.setImage(UIImage(systemName: "plus.circle.fill"), for: .normal)
+            addButton.tintColor = Theme.accentColor
+        }
+        
         // Reset badges
         badgeStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         
+        // Low Stock Urgency Badge
+        if let lowStockText = item.lowStockDisplay, !is86d {
+            badgeStack.addArrangedSubview(makeBadge(text: lowStockText, color: UIColor.systemOrange))
+        }
         if item.isVegetarian {
             badgeStack.addArrangedSubview(makeBadge(text: "🌱 Veg", color: Theme.vegGreen))
         }
@@ -215,7 +271,6 @@ final class FoodCardCell: UICollectionViewCell {
     private func loadImage(from urlString: String) {
         guard let url = URL(string: urlString) else { return }
         
-        // Simple async image loading (production apps should use SDWebImage or Kingfisher)
         URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
             guard let data = data, let image = UIImage(data: data) else { return }
             DispatchQueue.main.async {
@@ -225,15 +280,18 @@ final class FoodCardCell: UICollectionViewCell {
     }
     
     @objc private func addTapped() {
+        guard let item = foodItem, item.isAvailable else { return }
         addButton.addBounceAnimation()
-        
-        guard let item = foodItem else { return }
         delegate?.foodCardCellDidTapAdd(self, item: item)
     }
     
     override func prepareForReuse() {
         super.prepareForReuse()
         foodImageView.image = nil
+        foodImageView.alpha = 1.0
+        eightySixedOverlay.isHidden = true
+        addButton.isEnabled = true
+        nameLabel.textColor = .label
         badgeStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
     }
 }

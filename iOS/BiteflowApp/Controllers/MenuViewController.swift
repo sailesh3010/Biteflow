@@ -1,6 +1,6 @@
 import UIKit
 
-/// Main menu screen with category filter strip and food item grid
+/// Main menu screen with category filter strip, food item grid, 86'd status, and live kitchen rush banner
 final class MenuViewController: UIViewController {
     
     // MARK: - Data
@@ -9,8 +9,39 @@ final class MenuViewController: UIViewController {
     private var allItems: [FoodItemResponse] = []
     private var filteredItems: [FoodItemResponse] = []
     private var selectedCategoryIndex: Int = 0  // 0 = "All"
+    private var bistroStatus: BistroStatusResponse?
     
     // MARK: - UI Elements
+    
+    // Kitchen Rush Banner (Bistro Operation Feature)
+    private let rushBanner: UIView = {
+        let v = UIView()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.18)
+        v.layer.cornerRadius = 10
+        v.layer.borderWidth = 1
+        v.layer.borderColor = UIColor.systemOrange.cgColor
+        v.isHidden = true
+        return v
+    }()
+    
+    private let rushIcon: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = "🔥"
+        label.font = UIFont.systemFont(ofSize: 16)
+        return label
+    }()
+    
+    private let rushLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = .systemOrange
+        label.numberOfLines = 1
+        label.text = "Kitchen Rush Active: High volume, prep times +15m"
+        return label
+    }()
     
     private let searchBar: UISearchBar = {
         let sb = UISearchBar()
@@ -49,6 +80,8 @@ final class MenuViewController: UIViewController {
         return cv
     }()
     
+    private let refreshControl = UIRefreshControl()
+    
     private let activityIndicator: UIActivityIndicatorView = {
         let ai = UIActivityIndicatorView(style: .large)
         ai.translatesAutoresizingMaskIntoConstraints = false
@@ -68,6 +101,8 @@ final class MenuViewController: UIViewController {
         return label
     }()
     
+    private var rushBannerHeightConstraint: NSLayoutConstraint?
+    
     // MARK: - Lifecycle
     
     override func viewDidLoad() {
@@ -76,11 +111,15 @@ final class MenuViewController: UIViewController {
         setupUI()
         fetchMenu()
         
-        // Listen for cart changes to update badge
         NotificationCenter.default.addObserver(
             self, selector: #selector(cartDidChange),
             name: CartManager.cartDidChangeNotification, object: nil
         )
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        fetchBistroStatus()
     }
     
     deinit {
@@ -97,6 +136,10 @@ final class MenuViewController: UIViewController {
     private func setupUI() {
         view.backgroundColor = Theme.background
         
+        rushBanner.addSubview(rushIcon)
+        rushBanner.addSubview(rushLabel)
+        
+        view.addSubview(rushBanner)
         view.addSubview(searchBar)
         view.addSubview(categoryCollectionView)
         view.addSubview(foodCollectionView)
@@ -105,8 +148,25 @@ final class MenuViewController: UIViewController {
         
         searchBar.delegate = self
         
+        foodCollectionView.refreshControl = refreshControl
+        refreshControl.addTarget(self, action: #selector(handleRefresh), for: .valueChanged)
+        
+        rushBannerHeightConstraint = rushBanner.heightAnchor.constraint(equalToConstant: 0)
+        
         NSLayoutConstraint.activate([
-            searchBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            rushBanner.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            rushBanner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            rushBanner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            rushBannerHeightConstraint!,
+            
+            rushIcon.leadingAnchor.constraint(equalTo: rushBanner.leadingAnchor, constant: 10),
+            rushIcon.centerYAnchor.constraint(equalTo: rushBanner.centerYAnchor),
+            
+            rushLabel.leadingAnchor.constraint(equalTo: rushIcon.trailingAnchor, constant: 8),
+            rushLabel.trailingAnchor.constraint(equalTo: rushBanner.trailingAnchor, constant: -10),
+            rushLabel.centerYAnchor.constraint(equalTo: rushBanner.centerYAnchor),
+            
+            searchBar.topAnchor.constraint(equalTo: rushBanner.bottomAnchor, constant: 4),
             searchBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
             searchBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
             
@@ -155,13 +215,20 @@ final class MenuViewController: UIViewController {
         
         Task {
             do {
-                let categoriesWithItems = try await APIService.shared.fetchCategoriesWithItems()
+                async let categoriesTask = APIService.shared.fetchCategoriesWithItems()
+                async let statusTask = APIService.shared.fetchBistroStatus()
+                
+                let (categoriesWithItems, status) = try await (categoriesTask, statusTask)
+                
                 self.categories = categoriesWithItems
                 self.allItems = categoriesWithItems.flatMap { $0.items ?? [] }
                 self.filteredItems = self.allItems
+                self.bistroStatus = status
                 
                 DispatchQueue.main.async {
                     self.activityIndicator.stopAnimating()
+                    self.refreshControl.endRefreshing()
+                    self.updateRushBanner(status: status)
                     self.categoryCollectionView.reloadData()
                     self.foodCollectionView.reloadData()
                     self.updateEmptyState()
@@ -169,31 +236,58 @@ final class MenuViewController: UIViewController {
             } catch {
                 DispatchQueue.main.async {
                     self.activityIndicator.stopAnimating()
+                    self.refreshControl.endRefreshing()
                     self.showError(error)
                 }
             }
         }
     }
     
+    private func fetchBistroStatus() {
+        Task {
+            if let status = try? await APIService.shared.fetchBistroStatus() {
+                self.bistroStatus = status
+                DispatchQueue.main.async {
+                    self.updateRushBanner(status: status)
+                }
+            }
+        }
+    }
+    
+    @objc private func handleRefresh() {
+        fetchMenu()
+    }
+    
+    private func updateRushBanner(status: BistroStatusResponse) {
+        let isRush = status.isRushHour
+        rushBanner.isHidden = !isRush
+        rushBannerHeightConstraint?.constant = isRush ? 36 : 0
+        if isRush {
+            rushLabel.text = status.announcementMessage ?? "🔥 Peak Rush: +15m kitchen prep time"
+        }
+        UIView.animate(withDuration: 0.3) {
+            self.view.layoutIfNeeded()
+        }
+    }
+    
     // MARK: - Filtering
     
     private func filterItems() {
-        if selectedCategoryIndex == 0 {
-            // "All" selected
-            filteredItems = allItems
-        } else {
-            let category = categories[selectedCategoryIndex - 1]
-            filteredItems = category.items ?? []
+        var items = allItems
+        
+        if selectedCategoryIndex > 0 && selectedCategoryIndex <= categories.count {
+            let selectedCategory = categories[selectedCategoryIndex - 1]
+            items = selectedCategory.items ?? []
         }
         
-        // Apply search filter if search text exists
-        if let searchText = searchBar.text, !searchText.isEmpty {
-            filteredItems = filteredItems.filter {
-                $0.name.localizedCaseInsensitiveContains(searchText) ||
-                $0.description.localizedCaseInsensitiveContains(searchText)
+        if let query = searchBar.text, !query.isEmpty {
+            items = items.filter { item in
+                item.name.localizedCaseInsensitiveContains(query) ||
+                item.description.localizedCaseInsensitiveContains(query)
             }
         }
         
+        filteredItems = items
         foodCollectionView.reloadData()
         updateEmptyState()
     }
@@ -202,20 +296,16 @@ final class MenuViewController: UIViewController {
         emptyLabel.isHidden = !filteredItems.isEmpty
     }
     
-    // MARK: - Helpers
+    // MARK: - Actions
     
     @objc private func cartDidChange() {
-        // Update cart tab badge
-        if let tabItems = tabBarController?.tabBar.items, tabItems.count > 1 {
-            let count = CartManager.shared.itemCount
-            tabItems[1].badgeValue = count > 0 ? "\(count)" : nil
-            tabItems[1].badgeColor = Theme.accentColor
-        }
+        let count = CartManager.shared.itemCount
+        navigationController?.tabBarItem.badgeValue = count > 0 ? "\(count)" : nil
     }
     
     private func showError(_ error: Error) {
         let alert = UIAlertController(
-            title: "Error",
+            title: "Network Error",
             message: error.localizedDescription,
             preferredStyle: .alert
         )
@@ -225,81 +315,46 @@ final class MenuViewController: UIViewController {
         alert.addAction(UIAlertAction(title: "OK", style: .cancel))
         present(alert, animated: true)
     }
-    
-    private func showAddedToCartFeedback(for item: FoodItemResponse) {
-        let banner = UILabel()
-        banner.text = "✓ \(item.name) added to cart"
-        banner.font = Theme.captionFont(size: 13)
-        banner.textColor = .white
-        banner.backgroundColor = Theme.successColor
-        banner.textAlignment = .center
-        banner.layer.cornerRadius = 20
-        banner.clipsToBounds = true
-        banner.alpha = 0
-        banner.translatesAutoresizingMaskIntoConstraints = false
-        
-        view.addSubview(banner)
-        NSLayoutConstraint.activate([
-            banner.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-            banner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            banner.heightAnchor.constraint(equalToConstant: 40),
-            banner.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -40),
-            banner.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
-            banner.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
-        ])
-        
-        // Pad text
-        banner.layoutMargins = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
-        
-        UIView.animate(withDuration: 0.3) {
-            banner.alpha = 1
-            banner.transform = CGAffineTransform(translationX: 0, y: -10)
-        } completion: { _ in
-            UIView.animate(withDuration: 0.3, delay: 1.5) {
-                banner.alpha = 0
-                banner.transform = .identity
-            } completion: { _ in
-                banner.removeFromSuperview()
-            }
-        }
-    }
 }
 
-// MARK: - UICollectionViewDataSource & Delegate
+// MARK: - UICollectionView DataSource & Delegate
 
 extension MenuViewController: UICollectionViewDataSource, UICollectionViewDelegate {
     
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
         if collectionView == categoryCollectionView {
-            return categories.count + 1  // +1 for "All"
+            return categories.count + 1 // +1 for "All"
+        } else {
+            return filteredItems.count
         }
-        return filteredItems.count
     }
     
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         if collectionView == categoryCollectionView {
-            let cell = collectionView.dequeueReusableCell(
+            guard let cell = collectionView.dequeueReusableCell(
                 withReuseIdentifier: CategoryPillCell.reuseID, for: indexPath
-            ) as! CategoryPillCell
+            ) as? CategoryPillCell else { return UICollectionViewCell() }
+            
+            let isSelected = indexPath.item == selectedCategoryIndex
             
             if indexPath.item == 0 {
-                cell.configureAsAll(isSelected: selectedCategoryIndex == 0)
+                cell.configure(name: "All", icon: "🍽️", isSelected: isSelected)
             } else {
-                cell.configure(
-                    with: categories[indexPath.item - 1],
-                    isSelected: selectedCategoryIndex == indexPath.item
-                )
+                let category = categories[indexPath.item - 1]
+                cell.configure(name: category.name, icon: category.icon, isSelected: isSelected)
             }
+            
+            return cell
+        } else {
+            guard let cell = collectionView.dequeueReusableCell(
+                withReuseIdentifier: FoodCardCell.reuseID, for: indexPath
+            ) as? FoodCardCell else { return UICollectionViewCell() }
+            
+            let item = filteredItems[indexPath.item]
+            cell.configure(with: item)
+            cell.delegate = self
             return cell
         }
-        
-        // Food grid
-        let cell = collectionView.dequeueReusableCell(
-            withReuseIdentifier: FoodCardCell.reuseID, for: indexPath
-        ) as! FoodCardCell
-        cell.configure(with: filteredItems[indexPath.item])
-        cell.delegate = self
-        return cell
     }
     
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
@@ -307,16 +362,11 @@ extension MenuViewController: UICollectionViewDataSource, UICollectionViewDelega
             selectedCategoryIndex = indexPath.item
             categoryCollectionView.reloadData()
             filterItems()
-            
-            // Scroll selected pill into view
-            categoryCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
-            return
+        } else {
+            let item = filteredItems[indexPath.item]
+            let detailVC = FoodDetailViewController(foodItem: item)
+            navigationController?.pushViewController(detailVC, animated: true)
         }
-        
-        // Navigate to food detail
-        let item = filteredItems[indexPath.item]
-        let detailVC = FoodDetailViewController(foodItem: item)
-        navigationController?.pushViewController(detailVC, animated: true)
     }
 }
 
@@ -324,8 +374,11 @@ extension MenuViewController: UICollectionViewDataSource, UICollectionViewDelega
 
 extension MenuViewController: FoodCardCellDelegate {
     func foodCardCellDidTapAdd(_ cell: FoodCardCell, item: FoodItemResponse) {
+        guard item.isAvailable else { return }
         CartManager.shared.addItem(item)
-        showAddedToCartFeedback(for: item)
+        
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
     }
 }
 
@@ -338,11 +391,5 @@ extension MenuViewController: UISearchBarDelegate {
     
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
         searchBar.resignFirstResponder()
-    }
-    
-    func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
-        searchBar.text = ""
-        searchBar.resignFirstResponder()
-        filterItems()
     }
 }

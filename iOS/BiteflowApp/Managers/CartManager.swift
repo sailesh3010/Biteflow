@@ -1,5 +1,20 @@
 import Foundation
 
+/// Dining mode selected by customer
+enum DiningOption: String, CaseIterable {
+    case dineIn = "dine_in"
+    case pickup = "pickup"
+    case delivery = "delivery"
+    
+    var title: String {
+        switch self {
+        case .dineIn: return "🍽️ Dine-In"
+        case .pickup: return "🛍️ Takeout"
+        case .delivery: return "🛵 Delivery"
+        }
+    }
+}
+
 /// Manages the in-memory shopping cart state
 /// Uses the Observer pattern (NotificationCenter) to broadcast cart changes to all screens
 final class CartManager {
@@ -10,6 +25,17 @@ final class CartManager {
     static let cartDidChangeNotification = Notification.Name("CartManager.cartDidChange")
     
     private(set) var items: [CartItem] = []
+    
+    // Bistro operations state
+    var selectedDiningOption: DiningOption = .dineIn {
+        didSet { notifyCartChange() }
+    }
+    var tableNumber: String = "Table 4" {
+        didSet { notifyCartChange() }
+    }
+    var splitCount: Int = 1 {
+        didSet { notifyCartChange() }
+    }
     
     private init() {}
     
@@ -28,17 +54,27 @@ final class CartManager {
     }
     
     var deliveryFee: Double {
-        subtotal >= 30.0 ? 0.0 : 3.99
+        // Free delivery for dine-in, pickup, or delivery orders >= $30
+        if selectedDiningOption == .dineIn || selectedDiningOption == .pickup || subtotal >= 30.0 {
+            return 0.0
+        }
+        return 3.99
     }
     
     var total: Double {
         ((subtotal + tax + deliveryFee) * 100).rounded() / 100
     }
     
+    var perPersonSplit: Double {
+        let count = max(splitCount, 1)
+        return ((total / Double(count)) * 100).rounded() / 100
+    }
+    
     var formattedSubtotal: String { String(format: "$%.2f", subtotal) }
     var formattedTax: String { String(format: "$%.2f", tax) }
-    var formattedDeliveryFee: String { deliveryFee == 0 ? "Free" : String(format: "$%.2f", deliveryFee) }
+    var formattedDeliveryFee: String { deliveryFee == 0 ? "Free ($0.00)" : String(format: "$%.2f", deliveryFee) }
     var formattedTotal: String { String(format: "$%.2f", total) }
+    var formattedPerPersonSplit: String { String(format: "$%.2f / person", perPersonSplit) }
     
     var isEmpty: Bool { items.isEmpty }
     
@@ -52,6 +88,27 @@ final class CartManager {
             items.append(CartItem(foodItem: foodItem, quantity: quantity))
         }
         notifyCartChange()
+    }
+    
+    /// Add a custom pairing item or side (Upsell feature)
+    func addPairing(name: String, price: Double) {
+        let pairingItem = FoodItemResponse(
+            id: UUID(),
+            name: name,
+            description: "Chef's curated bistro pairing",
+            price: price,
+            imageURL: "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=400",
+            calories: 150,
+            prepTimeMinutes: 5,
+            isVegetarian: true,
+            isSpicy: false,
+            isAvailable: true,
+            stockCount: nil,
+            pairingName: nil,
+            pairingPrice: nil,
+            rating: 4.9
+        )
+        addItem(pairingItem, quantity: 1)
     }
     
     /// Remove a food item entirely from the cart
@@ -80,6 +137,7 @@ final class CartManager {
     /// Clear the entire cart (e.g., after successful order placement)
     func clearCart() {
         items.removeAll()
+        splitCount = 1
         notifyCartChange()
     }
     
@@ -98,11 +156,18 @@ final class CartManager {
             )
         }
         
+        let destination = selectedDiningOption == .dineIn
+            ? "Table \(tableNumber)"
+            : (selectedDiningOption == .pickup ? "Takeout Pickup Counter" : deliveryAddress)
+        
         return CreateOrderRequest(
             customerName: customerName,
             customerPhone: customerPhone,
-            deliveryAddress: deliveryAddress,
+            deliveryAddress: destination,
             specialInstructions: specialInstructions,
+            diningOption: selectedDiningOption.rawValue,
+            tableNumber: selectedDiningOption == .dineIn ? tableNumber : nil,
+            splitCount: splitCount,
             items: orderItems
         )
     }

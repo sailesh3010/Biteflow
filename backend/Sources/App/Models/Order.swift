@@ -32,6 +32,15 @@ final class Order: Model, Content, @unchecked Sendable {
     @Field(key: "special_instructions")
     var specialInstructions: String
     
+    @Field(key: "dining_option")
+    var diningOption: String
+    
+    @OptionalField(key: "table_number")
+    var tableNumber: String?
+    
+    @Field(key: "split_count")
+    var splitCount: Int
+    
     @Enum(key: "status")
     var status: OrderStatus
     
@@ -56,6 +65,9 @@ final class Order: Model, Content, @unchecked Sendable {
         deliveryFee: Double,
         total: Double,
         specialInstructions: String = "",
+        diningOption: String = "delivery",
+        tableNumber: String? = nil,
+        splitCount: Int = 1,
         status: OrderStatus = .placed
     ) {
         self.id = id
@@ -67,6 +79,9 @@ final class Order: Model, Content, @unchecked Sendable {
         self.deliveryFee = deliveryFee
         self.total = total
         self.specialInstructions = specialInstructions
+        self.diningOption = diningOption
+        self.tableNumber = tableNumber
+        self.splitCount = splitCount
         self.status = status
     }
 }

@@ -35,6 +35,15 @@ final class FoodItem: Model, Content, @unchecked Sendable {
     @Field(key: "is_available")
     var isAvailable: Bool
     
+    @OptionalField(key: "stock_count")
+    var stockCount: Int?
+    
+    @OptionalField(key: "pairing_name")
+    var pairingName: String?
+    
+    @OptionalField(key: "pairing_price")
+    var pairingPrice: Double?
+    
     @Field(key: "rating")
     var rating: Double
     
@@ -60,6 +69,9 @@ final class FoodItem: Model, Content, @unchecked Sendable {
         isVegetarian: Bool,
         isSpicy: Bool,
         isAvailable: Bool = true,
+        stockCount: Int? = nil,
+        pairingName: String? = nil,
+        pairingPrice: Double? = nil,
         rating: Double,
         categoryID: UUID
     ) {
@@ -73,6 +85,9 @@ final class FoodItem: Model, Content, @unchecked Sendable {
         self.isVegetarian = isVegetarian
         self.isSpicy = isSpicy
         self.isAvailable = isAvailable
+        self.stockCount = stockCount
+        self.pairingName = pairingName
+        self.pairingPrice = pairingPrice
         self.rating = rating
         self.$category.id = categoryID
     }

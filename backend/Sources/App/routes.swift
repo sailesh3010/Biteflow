@@ -13,4 +13,5 @@ func routes(_ app: Application) throws {
     try api.register(collection: CategoryController())
     try api.register(collection: FoodItemController())
     try api.register(collection: OrderController())
+    try api.register(collection: BistroController())
 }

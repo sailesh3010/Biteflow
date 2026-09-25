@@ -47,8 +47,11 @@ struct OrderController: RouteCollection {
         }
         
         let tax = (subtotal * 0.08).rounded(toPlaces: 2)      // 8% tax
-        let deliveryFee = subtotal >= 30.0 ? 0.0 : 3.99       // Free delivery over $30
+        let diningOption = input.diningOption ?? "delivery"
+        // Dine-in and pickup have zero delivery fee
+        let deliveryFee = (diningOption == "dine_in" || diningOption == "pickup" || subtotal >= 30.0) ? 0.0 : 3.99
         let total = (subtotal + tax + deliveryFee).rounded(toPlaces: 2)
+        let splitCount = max(input.splitCount ?? 1, 1)
         
         // Create the order
         let order = Order(
@@ -60,23 +63,36 @@ struct OrderController: RouteCollection {
             deliveryFee: deliveryFee,
             total: total,
             specialInstructions: input.specialInstructions,
+            diningOption: diningOption,
+            tableNumber: input.tableNumber,
+            splitCount: splitCount,
             status: .placed
         )
         try await order.save(on: req.db)
         
-        // Create order items
+        // Create order items & auto-decrement inventory count
         var itemResponses: [OrderItemResponse] = []
-        for (input, foodItem) in resolvedItems {
+        for (itemInput, foodItem) in resolvedItems {
             let orderItem = OrderItem(
                 orderID: order.id!,
                 foodItemID: foodItem.id!,
-                quantity: input.quantity,
+                quantity: itemInput.quantity,
                 unitPrice: foodItem.price,
                 itemName: foodItem.name,
-                specialNotes: input.specialNotes
+                specialNotes: itemInput.specialNotes
             )
             try await orderItem.save(on: req.db)
             itemResponses.append(OrderItemResponse(from: orderItem))
+            
+            // Auto-inventory decrement (Bistro feature)
+            if let currentStock = foodItem.stockCount {
+                let remaining = max(0, currentStock - itemInput.quantity)
+                foodItem.stockCount = remaining
+                if remaining == 0 {
+                    foodItem.isAvailable = false // Auto 86 when sold out!
+                }
+                try await foodItem.save(on: req.db)
+            }
         }
         
         return OrderResponse(from: order, items: itemResponses)

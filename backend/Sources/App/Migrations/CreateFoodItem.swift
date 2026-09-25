@@ -13,6 +13,9 @@ struct CreateFoodItem: AsyncMigration {
             .field("is_vegetarian", .bool, .required)
             .field("is_spicy", .bool, .required)
             .field("is_available", .bool, .required)
+            .field("stock_count", .int)
+            .field("pairing_name", .string)
+            .field("pairing_price", .double)
             .field("rating", .double, .required)
             .field("category_id", .uuid, .required,
                    .references("categories", "id", onDelete: .cascade))

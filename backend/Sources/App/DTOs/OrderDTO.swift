@@ -8,6 +8,9 @@ struct CreateOrderRequest: Content {
     let customerPhone: String
     let deliveryAddress: String
     let specialInstructions: String
+    let diningOption: String?      // "dine_in", "pickup", "delivery"
+    let tableNumber: String?       // e.g. "Table 4"
+    let splitCount: Int?           // e.g. 2 for bill splitting
     let items: [CreateOrderItemRequest]
 }
 
@@ -35,6 +38,10 @@ struct OrderResponse: Content {
     let deliveryFee: Double
     let total: Double
     let specialInstructions: String
+    let diningOption: String
+    let tableNumber: String?
+    let splitCount: Int
+    let perPersonSplit: Double
     let status: String
     let statusDisplayName: String
     let items: [OrderItemResponse]
@@ -50,6 +57,10 @@ struct OrderResponse: Content {
         self.deliveryFee = order.deliveryFee
         self.total = order.total
         self.specialInstructions = order.specialInstructions
+        self.diningOption = order.diningOption
+        self.tableNumber = order.tableNumber
+        self.splitCount = max(order.splitCount, 1)
+        self.perPersonSplit = (order.total / Double(max(order.splitCount, 1)) * 100).rounded() / 100
         self.status = order.status.rawValue
         self.statusDisplayName = order.status.displayName
         self.items = items

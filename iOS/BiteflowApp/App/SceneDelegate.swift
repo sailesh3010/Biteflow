@@ -43,7 +43,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             selectedImage: UIImage(systemName: "clock.arrow.circlepath")
         )
         
-        tabBarController.viewControllers = [menuNav, cartNav, ordersNav]
+        // 4. Bistro Manager Tab (Z-Report & Operations)
+        let portalVC = BistroPortalViewController()
+        let portalNav = UINavigationController(rootViewController: portalVC)
+        portalNav.tabBarItem = UITabBarItem(
+            title: "Manager",
+            image: UIImage(systemName: "chart.bar.doc.horizontal"),
+            selectedImage: UIImage(systemName: "chart.bar.doc.horizontal.fill")
+        )
+        
+        tabBarController.viewControllers = [menuNav, cartNav, ordersNav, portalNav]
         tabBarController.selectedIndex = 0
         
         window.rootViewController = tabBarController

@@ -6,8 +6,6 @@ final class APIService {
     static let shared = APIService()
     
     // MARK: - Configuration
-    // Change this to your machine's local IP when testing from a physical device,
-    // or use localhost for simulator testing.
     private let baseURL = "http://localhost:8080/api/v1"
     
     private let session: URLSession
@@ -29,57 +27,76 @@ final class APIService {
     
     // MARK: - Categories
     
-    /// Fetch all categories (without items)
     func fetchCategories() async throws -> [CategoryResponse] {
         return try await get(path: "/categories")
     }
     
-    /// Fetch all categories with their food items
     func fetchCategoriesWithItems() async throws -> [CategoryResponse] {
         return try await get(path: "/categories/with-items")
     }
     
-    /// Fetch a single category with its items
     func fetchCategory(id: UUID) async throws -> CategoryResponse {
         return try await get(path: "/categories/\(id.uuidString)")
     }
     
     // MARK: - Food Items
     
-    /// Fetch all available food items
     func fetchAllItems() async throws -> [FoodItemResponse] {
         return try await get(path: "/items")
     }
     
-    /// Fetch featured (top-rated) items
     func fetchFeaturedItems() async throws -> [FoodItemResponse] {
         return try await get(path: "/items/featured")
     }
     
-    /// Search items by name or description
     func searchItems(query: String) async throws -> [FoodItemResponse] {
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         return try await get(path: "/items/search?q=\(encodedQuery)")
     }
     
-    /// Fetch a single food item
     func fetchItem(id: UUID) async throws -> FoodItemResponse {
         return try await get(path: "/items/\(id.uuidString)")
     }
     
+    /// Fetch complementary upsell recommendations (Desserts/Drinks/Pairings)
+    func fetchItemUpsells(id: UUID) async throws -> [FoodItemResponse] {
+        return try await get(path: "/items/\(id.uuidString)/upsells")
+    }
+    
+    /// Toggle 86'd status (sold-out) for a dish
+    func toggleItem86(id: UUID, isAvailable: Bool? = nil) async throws -> FoodItemResponse {
+        let body = ToggleItem86Request(isAvailable: isAvailable, stockCount: nil)
+        return try await patch(path: "/items/\(id.uuidString)/toggle-86", body: body)
+    }
+    
+    // MARK: - Bistro Operations & Manager Portal
+    
+    /// Real-time kitchen load & rush hour status
+    func fetchBistroStatus() async throws -> BistroStatusResponse {
+        return try await get(path: "/bistro/status")
+    }
+    
+    /// Manager toggle for peak rush hour mode
+    func toggleRushMode(enabled: Bool, extraMinutes: Int = 15) async throws -> BistroStatusResponse {
+        let body = ToggleRushModeRequest(enabled: enabled, extraMinutes: extraMinutes)
+        return try await post(path: "/bistro/rush-mode", body: body)
+    }
+    
+    /// Fetch manager shift Z-Report and sales analytics
+    func fetchZReport() async throws -> ZReportResponse {
+        return try await get(path: "/bistro/z-report")
+    }
+    
     // MARK: - Orders
     
-    /// Place a new order
     func placeOrder(request: CreateOrderRequest) async throws -> OrderResponse {
         return try await post(path: "/orders", body: request)
     }
     
-    /// Fetch all orders
     func fetchOrders() async throws -> [OrderResponse] {
         return try await get(path: "/orders")
     }
     
-    /// Fetch a single order with items
     func fetchOrder(id: UUID) async throws -> OrderResponse {
         return try await get(path: "/orders/\(id.uuidString)")
     }
@@ -108,6 +125,23 @@ final class APIService {
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = try encoder.encode(body)
+        
+        let (data, response) = try await session.data(for: request)
+        try validateResponse(response)
+        
+        return try decoder.decode(T.self, from: data)
+    }
+    
+    private func patch<T: Decodable, B: Encodable>(path: String, body: B) async throws -> T {
+        guard let url = URL(string: "\(baseURL)\(path)") else {
+            throw APIError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.httpBody = try encoder.encode(body)
